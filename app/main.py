@@ -2,7 +2,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import logging
-from routes import audio  # 相対インポートを絶対インポートに変更
+from routes import audio, video
+
 import uvicorn
 
 # ロギングの設定
@@ -33,7 +34,9 @@ class AudioExtractionRequest(BaseModel):
     url: str
 
 # ルートの登録
-app.include_router(audio.router, prefix="/api/v1")  # これを追加
+app.include_router(audio.router, prefix="/api/v1")  
+app.include_router(video.router, prefix="/api/v1")  
+
 
 # ヘルスチェックエンドポイント
 @app.get("/health")
