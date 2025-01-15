@@ -20,3 +20,9 @@ async def extract_video():
 
 
 
+
+
+@router.get("/extract-video23")
+async def extract_video():
+    return {"status": "called extract-video"}
+
