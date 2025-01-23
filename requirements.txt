@@ -2,9 +2,13 @@ fastapi==0.109.0
 uvicorn==0.27.0
 python-multipart==0.0.6
 yt-dlp==2023.12.30
+httpx==0.26.0
+mutagen==1.47.0  
+requests==2.31.0 
+Pillow==10.0.0
+
+# テスト用ライブラリ
 pytest==7.4.4
 pytest-asyncio==0.23.5
-httpx==0.26.0
-mutagen==1.47.0  # 追加
-requests==2.31.0  # 追加
-Pillow==10.0.0
+
+yt-dlp # 最新版取得
