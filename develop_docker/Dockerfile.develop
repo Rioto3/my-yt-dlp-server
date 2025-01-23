@@ -1,0 +1,20 @@
+# Dockerfile.develop
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY develop_docker/requirements_develop.txt .
+RUN pip install --no-cache-dir -r requirements_develop.txt
+
+# Copy application
+COPY app /app
+
+# Set the pythonpath environment variable and run the app
+ENV PYTHONPATH=/app
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7783"]

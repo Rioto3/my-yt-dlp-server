@@ -1,0 +1,11 @@
+fastapi==0.109.0
+uvicorn==0.27.0
+python-multipart==0.0.6
+pytest==7.4.4
+pytest-asyncio==0.23.5
+httpx==0.26.0
+mutagen==1.47.0  
+requests==2.31.0 
+Pillow==10.0.0
+
+yt-dlp # 最新版取得

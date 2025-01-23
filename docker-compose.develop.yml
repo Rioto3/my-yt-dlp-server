@@ -1,9 +1,11 @@
 # ポート番号だけ違うもの
 services:
   api_develop:
-    build: .
+    build:
+      context: .  # プロジェクトルートをビルドコンテキストとして指定
+      dockerfile: develop_docker/Dockerfile.develop  # Dockerfileへの相対パス
     ports:
-      - "7784:7784"  # テスト環境用のポート
+      - "7783:7783"  # 左テスト環境用のポート
     volumes:
       - ./app:/app
     environment:
@@ -20,7 +22,7 @@ services:
       "uvicorn",
       "main:app",
       "--host", "0.0.0.0",
-      "--port", "7784",
+      "--port", "7783",
       "--timeout-keep-alive", "6000",
       "--workers", "2",
       "--limit-concurrency", "3",
