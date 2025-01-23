@@ -2,7 +2,6 @@
 services:
   api_develop:
     build: .
-    restart: always
     ports:
       - "7784:7784"  # テスト環境用のポート
     volumes:
