@@ -20,6 +20,10 @@
 # - 負荷に応じてワーカー数やリクエスト制限を調整
 # - TEMPディレクトリの定期的なクリーンアップが必要
 
+networks:
+  default:
+    name: my-yt-dlp-server-network
+
 services:
   api:
     build: .

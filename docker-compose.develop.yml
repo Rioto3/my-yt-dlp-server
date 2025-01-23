@@ -1,4 +1,9 @@
 # ポート番号だけ違うもの
+
+networks:
+  default:
+    name: my-yt-dlp-develop-server-network
+
 services:
   api_develop:
     build:
