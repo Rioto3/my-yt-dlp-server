@@ -25,7 +25,7 @@ networks:
     name: my-yt-dlp-server-network
 
 services:
-  api:
+  api1:
     build: .
     restart: always
     ports:
