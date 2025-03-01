@@ -13,10 +13,16 @@ import io
 logger = logging.getLogger(__name__)
 
 class AudioExtractor:
+
     def __init__(self):
         self.temp_dir = "temp"
         os.makedirs(self.temp_dir, exist_ok=True)
         
+        # cookiesファイルパスの設定
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        self.cookies_path = os.path.join(current_dir, 'cookies.firefox-private.txt')
+        
+        # yt-dlpオプションの改善
         self.ydl_opts = {
             'format': 'bestaudio/best',
             'postprocessors': [{
@@ -26,13 +32,27 @@ class AudioExtractor:
             }],
             'writethumbnail': True,
             'outtmpl': f'{self.temp_dir}/%(id)s.%(ext)s',
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': True,  # プレイリスト情報を取得
-            'noplaylist': False    # プレイリスト情報を許可
+            'quiet': False,
+            'no_warnings': False,
+            'cookiefile': self.cookies_path,
+            'extract_flat': True,
+            'noplaylist': False,
+            # 以下の設定を追加
+            'sleep_interval': 5,  # リクエスト間の遅延を追加
+            'max_sleep_interval': 10,
+            'geo_bypass': True,
+            'geo_bypass_country': 'US',
+            # より一般的なユーザーエージェントに変更
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            }
         }
 
-    
+
+    # _get_video_infoメソッド内のvideo_optsの設定も修正
+
 
     async def _get_video_info(self, url: str) -> Dict:
         """動画の情報を取得"""
@@ -53,7 +73,10 @@ class AudioExtractor:
                 **self.ydl_opts,
                 'extract_flat': False,
                 'noplaylist': True,
+                'verbose': True  # より詳細なログを有効化
             }
+            # cookiesfileの指定は既に初期化時に含まれているので不要
+            
 
             with yt_dlp.YoutubeDL(playlist_opts) as ydl:
                 try:
@@ -295,100 +318,116 @@ class AudioExtractor:
             logger.error(f"Error setting media tags: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
-                    
+                        
+    # _download_and_convertメソッドを修正
     async def _download_and_convert(self, url: str, video_id: str) -> str:
-            """動画をダウンロードしMP3に変換"""
-            try:
-                # cookiesファイルの優先順位を設定
-         
-                # 存在するcookiesファイルを選択
-                cookies_path = os.path.join(os.path.dirname(__file__), 'cookies.firefox-private.txt')
-                        
-                # ファイルの存在と内容を確認
-                if os.path.exists(cookies_path):
-                    file_size = os.path.getsize(cookies_path)
-                    logger.info(f"Cookies file found: {cookies_path}, Size: {file_size} bytes")
-                    
-                    # ファイルの先頭数行を表示
-                    with open(cookies_path, 'r') as f:
-                        print("Cookies file preview:")
-                        for _ in range(5):
-                            line = f.readline().strip()
-                            if not line:
-                                break
-                            print(line)
-                else:
-                    logger.error(f"Cookies file not found: {cookies_path}")
+        try:
+            # cookiesファイルの設定
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            cookies_path = os.path.join(current_dir, 'cookies.firefox-private.txt')
+            
+            # 出力ディレクトリの設定と確認
+            os.makedirs(self.temp_dir, exist_ok=True)
+            
+            # フォーマットを明示的に指定してダウンロード
+            current_opts = {
+                'format': 'bestaudio/best',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '320',
+                }],
+                'writethumbnail': True,
+                'outtmpl': os.path.join(self.temp_dir, '%(id)s.%(ext)s'),
+                'cookiefile': cookies_path,
+                'noplaylist': True,  # プレイリストを無視
+                'sleep_interval': 5,
+                'geo_bypass': True,
+                'geo_bypass_country': 'US',
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                },
+                'verbose': True,
+                # 直接ダウンロードURLのみ取得するオプション
+                'skip_download': False,
+                'progress': True
+            }
+            
+            logger.info(f"直接ダウンロード試行: {url} → {self.temp_dir}/{video_id}")
+            
+            # まず動画自体をダウンロード（mp3変換せず）
+            download_opts = current_opts.copy()
+            download_opts['postprocessors'] = []  # 後処理を無効化
+            
+            with yt_dlp.YoutubeDL(download_opts) as ydl:
+                # まず動画をダウンロード
+                await asyncio.to_thread(ydl.download, [url])
                 
+                # ダウンロードした動画ファイルを探す
+                video_files = [f for f in os.listdir(self.temp_dir) 
+                            if f.startswith(video_id) and not f.endswith('.webp')]
                 
-                # 出力ディレクトリが存在することを確認
-                os.makedirs(self.temp_dir, exist_ok=True)
+                if not video_files:
+                    logger.error(f"動画ファイルが見つかりません: {self.temp_dir}内のファイル: {os.listdir(self.temp_dir)}")
+                    raise Exception("ダウンロードに失敗しました")
                 
-                # yt-dlpのオプションを更新
-                current_opts = self.ydl_opts.copy()
+                # 最初の動画ファイルを取得
+                video_file = os.path.join(self.temp_dir, video_files[0])
+                logger.info(f"ダウンロードした動画ファイル: {video_file}")
                 
-                # Cookiesファイルがある場合に追加
-                if cookies_path:
-                    current_opts['cookiefile'] = cookies_path
-                    logger.info(f"Using cookies from {cookies_path}")
-                
-                current_opts.update({
-                    'outtmpl': os.path.join(self.temp_dir, '%(id)s.%(ext)s'),
-                    'format': 'bestaudio/best',
-                    'postprocessors': [{
-                        'key': 'FFmpegExtractAudio',
-                        'preferredcodec': 'mp3',
-                        'preferredquality': '320',
-                    }],
-                    'verbose': True,  # 詳細なログを有効化
-                })
-
-                logger.info(f"Downloading to directory: {self.temp_dir}")
-                
-                with yt_dlp.YoutubeDL(current_opts) as ydl:
-                    try:
-                        await asyncio.to_thread(ydl.download, [url])
-                    except Exception as ydl_error:
-                        logger.error(f"YouTube-DL error details: {str(ydl_error)}")
-                        if 'Sign in to confirm' in str(ydl_error):
-                            logger.error("Authentication required. Please provide valid cookies.")
-                        raise
-                    
-                # 出力ファイルのパスを構築
+                # FFmpegで直接変換
                 output_file = os.path.join(self.temp_dir, f"{video_id}.mp3")
+                ffmpeg_cmd = [
+                    'ffmpeg', '-i', video_file, 
+                    '-vn', '-ar', '44100', '-ac', '2', '-b:a', '320k',
+                    output_file
+                ]
                 
-                # ファイルの存在と有効性を確認
+                logger.info(f"FFmpeg変換コマンド: {' '.join(ffmpeg_cmd)}")
+                
+                try:
+                    process = await asyncio.create_subprocess_exec(
+                        *ffmpeg_cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE
+                    )
+                    stdout, stderr = await process.communicate()
+                    
+                    if process.returncode != 0:
+                        logger.error(f"FFmpeg変換エラー: {stderr.decode()}")
+                        raise Exception(f"FFmpeg変換失敗: {stderr.decode()}")
+                    
+                    logger.info(f"FFmpeg変換成功: {output_file}")
+                    
+                    # 元の動画ファイルを削除
+                    os.remove(video_file)
+                except Exception as e:
+                    logger.error(f"FFmpeg実行エラー: {str(e)}")
+                    raise
+                
+                # 変換後のファイルを確認
                 if not os.path.exists(output_file):
-                    logger.error(f"Expected output file not found: {output_file}")
-                    # 出力ディレクトリの内容をログ
-                    files = os.listdir(self.temp_dir)
-                    logger.error(f"Files in directory: {files}")
-                    raise Exception("File conversion failed - Output file not found")
-                        
-                # ファイルサイズの確認
+                    logger.error(f"MP3ファイルが見つかりません: {output_file}")
+                    raise Exception("MP3変換に失敗しました")
+                
                 file_size = os.path.getsize(output_file)
                 if file_size == 0:
-                    raise Exception(f"Generated file is empty: {output_file}")
-
-                logger.info(f"Successfully downloaded and converted: {output_file} ({file_size} bytes)")
+                    raise Exception(f"空のMP3ファイル: {output_file}")
+                    
+                logger.info(f"MP3変換成功: {output_file} ({file_size} bytes)")
                 return output_file
 
-            except Exception as e:
-                logger.error(f"Error in download_and_convert: {str(e)}")
-                logger.error(f"Error type: {type(e)}")
-                import traceback
-                logger.error(f"Traceback: {traceback.format_exc()}")
-                
-                # より具体的なエラー情報を提供
-                if isinstance(e, yt_dlp.utils.DownloadError):
-                    if 'Sign in to confirm' in str(e):
-                        raise HTTPException(status_code=401, detail="Authentication required. Please provide valid cookies.")
-                    raise HTTPException(status_code=400, detail=f"Download failed: {str(e)}")
-                elif isinstance(e, FileNotFoundError):
-                    raise HTTPException(status_code=400, detail="File not found after download")
-                else:
-                    raise HTTPException(status_code=400, detail=f"Download or conversion failed: {str(e)}")
-                
+        except Exception as e:
+            logger.error(f"変換処理エラー: {str(e)}")
+            logger.error(f"エラータイプ: {type(e)}")
+            import traceback
+            logger.error(f"トレース: {traceback.format_exc()}")
+            raise HTTPException(status_code=400, detail=f"ダウンロードまたは変換に失敗: {str(e)}")  
+            
+            
+            
+            
                 
     def _extract_video_id(self, url: str) -> str:
         """URLから動画IDを抽出"""
