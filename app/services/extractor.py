@@ -300,8 +300,6 @@ class AudioExtractor:
             """動画をダウンロードしMP3に変換"""
             try:
                 # cookiesファイルの優先順位を設定
-         
-                # 存在するcookiesファイルを選択
                 cookies_path = os.path.join(os.path.dirname(__file__), 'cookies.firefox-private.txt')
                         
                 # ファイルの存在と内容を確認
@@ -309,14 +307,10 @@ class AudioExtractor:
                     file_size = os.path.getsize(cookies_path)
                     logger.info(f"Cookies file found: {cookies_path}, Size: {file_size} bytes")
                     
-                    # ファイルの先頭数行を表示
+                    # ファイルの先頭数行をログに出力
                     with open(cookies_path, 'r') as f:
-                        print("Cookies file preview:")
-                        for _ in range(5):
-                            line = f.readline().strip()
-                            if not line:
-                                break
-                            print(line)
+                        preview_lines = [f.readline().strip() for _ in range(5)]
+                        logger.info("Cookies file preview: " + " | ".join(preview_lines))
                 else:
                     logger.error(f"Cookies file not found: {cookies_path}")
                 
