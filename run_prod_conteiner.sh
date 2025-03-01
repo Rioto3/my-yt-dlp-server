@@ -1,4 +1,4 @@
 # bin/sh
-docker-compose -f docker-compose.yml up -d --build
+docker-compose -f docker-compose.yml build --no-cache
+docker-compose up -d
 
-$HOME/myApp/Project/my-yt-dlp-server/run_prod_conteiner.sh
