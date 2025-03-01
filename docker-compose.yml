@@ -33,7 +33,6 @@ services:
     volumes:
       - ./app:/app
     environment:
-      - ENVIRONMENT=product
       - MAX_FILE_SIZE=100000000
       - TEMP_DIR=/app/temp
     deploy:

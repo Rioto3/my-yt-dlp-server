@@ -295,66 +295,101 @@ class AudioExtractor:
             logger.error(f"Error setting media tags: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
-                
-    async def _download_and_convert(self, url: str, video_id: str) -> str:
-        """動画をダウンロードしMP3に変換"""
-        try:
-            # 出力ディレクトリが存在することを確認
-            os.makedirs(self.temp_dir, exist_ok=True)
-            
-            # yt-dlpのオプションを更新
-            current_opts = self.ydl_opts.copy()
-            current_opts.update({
-                'outtmpl': os.path.join(self.temp_dir, '%(id)s.%(ext)s'),
-                'format': 'bestaudio/best',
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '320',
-                }],
-                'verbose': True,  # 詳細なログを有効化
-            })
-
-            logger.info(f"Downloading to directory: {self.temp_dir}")
-            
-            with yt_dlp.YoutubeDL(current_opts) as ydl:
-                try:
-                    await asyncio.to_thread(ydl.download, [url])
-                except Exception as ydl_error:
-                    logger.error(f"YouTube-DL error details: {str(ydl_error)}")
-                    raise
-                
-            # 出力ファイルのパスを構築
-            output_file = os.path.join(self.temp_dir, f"{video_id}.mp3")
-            if not os.path.exists(output_file):
-                logger.error(f"Expected output file not found: {output_file}")
-                # 出力ディレクトリの内容をログ
-                files = os.listdir(self.temp_dir)
-                logger.error(f"Files in directory: {files}")
-                raise Exception("File conversion failed - Output file not found")
                     
-            # ファイルサイズの確認
-            file_size = os.path.getsize(output_file)
-            if file_size == 0:
-                raise Exception(f"Generated file is empty: {output_file}")
+    async def _download_and_convert(self, url: str, video_id: str) -> str:
+            """動画をダウンロードしMP3に変換"""
+            try:
+                # cookiesファイルの優先順位を設定
+         
+                # 存在するcookiesファイルを選択
+                cookies_path = os.path.join(os.path.dirname(__file__), 'cookies.firefox-private.txt')
+                        
+                # ファイルの存在と内容を確認
+                if os.path.exists(cookies_path):
+                    file_size = os.path.getsize(cookies_path)
+                    logger.info(f"Cookies file found: {cookies_path}, Size: {file_size} bytes")
+                    
+                    # ファイルの先頭数行を表示
+                    with open(cookies_path, 'r') as f:
+                        print("Cookies file preview:")
+                        for _ in range(5):
+                            line = f.readline().strip()
+                            if not line:
+                                break
+                            print(line)
+                else:
+                    logger.error(f"Cookies file not found: {cookies_path}")
+                
+                
+                # 出力ディレクトリが存在することを確認
+                os.makedirs(self.temp_dir, exist_ok=True)
+                
+                # yt-dlpのオプションを更新
+                current_opts = self.ydl_opts.copy()
+                
+                # Cookiesファイルがある場合に追加
+                if cookies_path:
+                    current_opts['cookiefile'] = cookies_path
+                    logger.info(f"Using cookies from {cookies_path}")
+                
+                current_opts.update({
+                    'outtmpl': os.path.join(self.temp_dir, '%(id)s.%(ext)s'),
+                    'format': 'bestaudio/best',
+                    'postprocessors': [{
+                        'key': 'FFmpegExtractAudio',
+                        'preferredcodec': 'mp3',
+                        'preferredquality': '320',
+                    }],
+                    'verbose': True,  # 詳細なログを有効化
+                })
 
-            logger.info(f"Successfully downloaded and converted: {output_file} ({file_size} bytes)")
-            return output_file
+                logger.info(f"Downloading to directory: {self.temp_dir}")
+                
+                with yt_dlp.YoutubeDL(current_opts) as ydl:
+                    try:
+                        await asyncio.to_thread(ydl.download, [url])
+                    except Exception as ydl_error:
+                        logger.error(f"YouTube-DL error details: {str(ydl_error)}")
+                        if 'Sign in to confirm' in str(ydl_error):
+                            logger.error("Authentication required. Please provide valid cookies.")
+                        raise
+                    
+                # 出力ファイルのパスを構築
+                output_file = os.path.join(self.temp_dir, f"{video_id}.mp3")
+                
+                # ファイルの存在と有効性を確認
+                if not os.path.exists(output_file):
+                    logger.error(f"Expected output file not found: {output_file}")
+                    # 出力ディレクトリの内容をログ
+                    files = os.listdir(self.temp_dir)
+                    logger.error(f"Files in directory: {files}")
+                    raise Exception("File conversion failed - Output file not found")
+                        
+                # ファイルサイズの確認
+                file_size = os.path.getsize(output_file)
+                if file_size == 0:
+                    raise Exception(f"Generated file is empty: {output_file}")
 
-        except Exception as e:
-            logger.error(f"Error in download_and_convert: {str(e)}")
-            logger.error(f"Error type: {type(e)}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            
-            # より具体的なエラー情報を提供
-            if isinstance(e, yt_dlp.utils.DownloadError):
-                raise HTTPException(status_code=400, detail=f"Download failed: {str(e)}")
-            elif isinstance(e, FileNotFoundError):
-                raise HTTPException(status_code=400, detail="File not found after download")
-            else:
-                raise HTTPException(status_code=400, detail=f"Download or conversion failed: {str(e)}")
-            
+                logger.info(f"Successfully downloaded and converted: {output_file} ({file_size} bytes)")
+                return output_file
+
+            except Exception as e:
+                logger.error(f"Error in download_and_convert: {str(e)}")
+                logger.error(f"Error type: {type(e)}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                
+                # より具体的なエラー情報を提供
+                if isinstance(e, yt_dlp.utils.DownloadError):
+                    if 'Sign in to confirm' in str(e):
+                        raise HTTPException(status_code=401, detail="Authentication required. Please provide valid cookies.")
+                    raise HTTPException(status_code=400, detail=f"Download failed: {str(e)}")
+                elif isinstance(e, FileNotFoundError):
+                    raise HTTPException(status_code=400, detail="File not found after download")
+                else:
+                    raise HTTPException(status_code=400, detail=f"Download or conversion failed: {str(e)}")
+                
+                
     def _extract_video_id(self, url: str) -> str:
         """URLから動画IDを抽出"""
         import urllib.parse
