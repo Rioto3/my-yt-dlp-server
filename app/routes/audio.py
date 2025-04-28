@@ -10,6 +10,8 @@ import zipfile
 from fastapi import BackgroundTasks
 import shutil
 from mutagen.id3 import ID3
+import asyncio  # Add this line to import the asyncio module
+
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -28,27 +30,47 @@ async def extract_audio(request: AudioExtractionRequest):
         filename = result["filename"]
         encoded_filename = quote(filename)
         
+        # 重要: ファイルをコピーして一時ディレクトリに保存
+        temp_dir = "download_cache"
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # 一意のファイル名を生成
+        import uuid
+        cache_filename = f"{uuid.uuid4().hex}.mp3"
+        cache_path = os.path.join(temp_dir, cache_filename)
+        
+        # ファイルをコピー
+        import shutil
+        shutil.copy2(result["file_path"], cache_path)
+        logger.info(f"Copied file to cache: {cache_path}")
+        
+        # 元のファイルはすぐに削除
+        await cleanup_temp_file(result["file_path"])
+        
+        # キャッシュからファイルを送信
         response = FileResponse(
-            path=result["file_path"],
+            path=cache_path,
             media_type="audio/mpeg",
-            filename=filename  # オリジナルのファイル名
+            filename=filename
         )
         
         # Content-Dispositionヘッダーを明示的に設定
         response.headers["Content-Disposition"] = f'attachment; filename="{encoded_filename}"; filename*=UTF-8\'\'{encoded_filename}'
         
-        response.background = lambda: cleanup_temp_file(result["file_path"])
+        # ダウンロード完了後に遅延してクリーンアップ (30秒後)
+        async def delayed_cleanup():
+            await asyncio.sleep(30)  # 30秒待機
+            await cleanup_temp_file(cache_path)
+            logger.info(f"Cleaned up cached file after delay: {cache_path}")
+        
+        # バックグラウンドタスクとして実行
+        asyncio.create_task(delayed_cleanup())
         
         return response
 
-    except HTTPException as he:
-        logger.error(f"HTTP Exception: {he.detail}")
-        raise he
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
-
-
 
 
 @router.post("/extract-album")
