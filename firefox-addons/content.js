@@ -192,12 +192,101 @@ class TranscriptService {
 
   async copyToClipboard(text) {
     try {
-      await navigator.clipboard.writeText(text);
-      return true;
+      // モダンブラウザのClipboard API
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+      
+      // フォールバック: document.execCommand (非推奨だが互換性のため)
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      
+      const result = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      
+      if (result) {
+        return true;
+      } else {
+        throw new Error('document.execCommand failed');
+      }
+      
     } catch (error) {
       console.error('クリップボードへのコピーに失敗:', error);
+      
+      // 最後の手段: ユーザーに手動でコピーしてもらう
+      const modal = this.createCopyModal(text);
+      document.body.appendChild(modal);
       return false;
     }
+  }
+
+  createCopyModal(text) {
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      z-index: 10001;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    `;
+
+    const content = document.createElement('div');
+    content.style.cssText = `
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      max-width: 80%;
+      max-height: 80%;
+      overflow: auto;
+    `;
+
+    const title = document.createElement('h3');
+    title.textContent = 'トランスクリプト（手動でコピーしてください）';
+    title.style.marginTop = '0';
+
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.cssText = `
+      width: 100%;
+      height: 300px;
+      font-family: monospace;
+      font-size: 12px;
+    `;
+    textarea.select();
+
+    const closeButton = document.createElement('button');
+    closeButton.textContent = '閉じる';
+    closeButton.style.cssText = `
+      margin-top: 10px;
+      padding: 10px 20px;
+      background: #007BFF;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    `;
+    closeButton.addEventListener('click', () => {
+      document.body.removeChild(modal);
+    });
+
+    content.appendChild(title);
+    content.appendChild(textarea);
+    content.appendChild(closeButton);
+    modal.appendChild(content);
+
+    return modal;
   }
 
   async handleTranscriptRequest(button, videoId = null) {
@@ -227,7 +316,12 @@ class TranscriptService {
         
         FileUtils.showNotification('トランスクリプトをクリップボードにコピーしました!', 'success');
       } else {
-        throw new Error('クリップボードへのコピーに失敗しました');
+        // 部分的成功（モーダル表示）
+        button.classList.remove('loading');
+        button.classList.add('success');
+        button.textContent = '📋 手動コピー';
+        
+        FileUtils.showNotification('トランスクリプトを表示しました。手動でコピーしてください。', 'info');
       }
       
     } catch (error) {
