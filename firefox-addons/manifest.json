@@ -1,11 +1,12 @@
 {
   "manifest_version": 2,
-  "name": "use localhost:7783",
-  "version": "1.0",
-  "description": "use localhost:7783",
+  "name": "YouTube Audio/Video/Transcript Extractor",
+  "version": "1.1.0",
+  "description": "Extract high quality audio, video, and transcripts from YouTube videos",
   "permissions": [
     "activeTab",
-    "<all_urls>"
+    "<all_urls>",
+    "clipboardWrite"
   ],
   "content_scripts": [
     {
