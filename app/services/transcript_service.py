@@ -114,6 +114,7 @@ class TranscriptService:
         
         for file_path in Path(self.temp_dir).glob("*.vtt"):
             file_name = file_path.name
+            logger.info(f"見つかった字幕ファイル: {file_name}")
             
             # 手動字幕を優先
             if '.ja.vtt' in file_name:
@@ -129,6 +130,7 @@ class TranscriptService:
         if not subtitle_files:
             raise FileNotFoundError("字幕ファイルが見つかりませんでした")
         
+        logger.info(f"利用可能な字幕ファイル: {subtitle_files}")
         return subtitle_files
     
     def _parse_subtitle_file(self, subtitle_files: Dict[str, str]) -> Dict[str, str]:
@@ -150,9 +152,13 @@ class TranscriptService:
         if not selected_file:
             raise FileNotFoundError("利用可能な字幕ファイルがありません")
         
+        logger.info(f"選択された字幕ファイル: {selected_file} ({selected_type} {selected_lang})")
+        
         # VTTファイルを読み込み
         with open(selected_file, 'r', encoding='utf-8') as f:
             content = f.read()
+        
+        logger.info(f"VTTファイルサイズ: {len(content)} 文字")
         
         # VTTからテキストを抽出
         text_content = self._extract_text_from_vtt(content)
@@ -164,93 +170,166 @@ class TranscriptService:
         }
     
     def _extract_text_from_vtt(self, vtt_content: str) -> str:
-        """VTTファイルからテキスト部分のみを抽出"""
+        """VTTファイルからテキスト部分のみを抽出（改良版）"""
         lines = vtt_content.split('\n')
-        text_lines = []
+        text_segments = []
         
-        skip_next = False
-        for line in lines:
-            line = line.strip()
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
             
             # ヘッダー行をスキップ
             if line.startswith('WEBVTT') or line.startswith('Kind:') or line.startswith('Language:'):
+                i += 1
                 continue
             
-            # タイムスタンプ行をスキップ
+            # タイムスタンプ行を検出
             if re.match(r'\d{2}:\d{2}:\d{2}\.\d{3} --> \d{2}:\d{2}:\d{2}\.\d{3}', line):
-                skip_next = True
-                continue
-            
-            # 空行をスキップ
-            if not line:
-                skip_next = False
-                continue
-            
-            # position情報などをスキップ
-            if 'align:' in line or 'position:' in line:
-                continue
-            
-            # テキスト行を処理
-            if not skip_next and line:
-                # HTMLタグを除去
-                clean_text = re.sub(r'<[^>]+>', '', line)
-                # 特殊なタイムスタンプタグを除去
-                clean_text = re.sub(r'<\d{2}:\d{2}:\d{2}\.\d{3}>', '', clean_text)
-                clean_text = re.sub(r'<c[^>]*>', '', clean_text)
-                clean_text = re.sub(r'</c>', '', clean_text)
+                i += 1
+                # タイムスタンプの後のテキスト行を取得
+                text_lines = []
+                while i < len(lines):
+                    text_line = lines[i].strip()
+                    if not text_line:  # 空行で区切り終了
+                        break
+                    if re.match(r'\d{2}:\d{2}:\d{2}\.\d{3} --> \d{2}:\d{2}:\d{2}\.\d{3}', text_line):
+                        # 次のタイムスタンプが見つかったら戻る
+                        i -= 1
+                        break
+                    
+                    # テキストをクリーニング
+                    clean_text = self._clean_vtt_text(text_line)
+                    if clean_text:
+                        text_lines.append(clean_text)
+                    i += 1
                 
-                if clean_text.strip():
-                    text_lines.append(clean_text.strip())
+                # セグメントのテキストを結合
+                if text_lines:
+                    segment_text = ' '.join(text_lines)
+                    if segment_text:
+                        text_segments.append(segment_text)
+            
+            i += 1
         
-        # テキストを結合して整形
-        full_text = ' '.join(text_lines)
+        logger.info(f"抽出されたセグメント数: {len(text_segments)}")
+        
+        # 全セグメントを結合
+        full_text = ' '.join(text_segments)
         
         # 重複を除去し、読みやすく整形
         return self._clean_and_format_text(full_text)
     
-    def _clean_and_format_text(self, text: str) -> str:
-        """テキストをクリーニングして読みやすく整形"""
-        # 同じフレーズの重複を除去
-        sentences = text.split('。')
-        unique_sentences = []
+    def _clean_vtt_text(self, text: str) -> str:
+        """VTTテキスト行のクリーニング"""
+        # HTMLタグを除去
+        text = re.sub(r'<[^>]+>', '', text)
         
-        for sentence in sentences:
-            sentence = sentence.strip()
-            if sentence and sentence not in unique_sentences:
-                unique_sentences.append(sentence)
+        # VTTの特殊なタイムスタンプタグを除去
+        text = re.sub(r'<\d{2}:\d{2}:\d{2}\.\d{3}>', '', text)
         
-        # 文章を再構成
-        cleaned_text = '。'.join(unique_sentences)
-        if not cleaned_text.endswith('。') and cleaned_text:
-            cleaned_text += '。'
+        # VTTのスタイルタグを除去
+        text = re.sub(r'<c[^>]*>', '', text)
+        text = re.sub(r'</c>', '', text)
         
-        # 長い文章を適切な箇所で改行
-        formatted_text = self._add_paragraph_breaks(cleaned_text)
+        # 位置情報を除去
+        if 'align:' in text or 'position:' in text:
+            return ''
         
-        return formatted_text
+        # 音楽記号を除去
+        text = re.sub(r'♪.*?♪', '', text)
+        text = re.sub(r'\[音楽\]', '', text)
+        text = re.sub(r'\[Music\]', '', text)
+        
+        return text.strip()
     
-    def _add_paragraph_breaks(self, text: str) -> str:
-        """長いテキストに適切な段落区切りを追加"""
-        sentences = text.split('。')
-        paragraphs = []
-        current_paragraph = []
+    def _clean_and_format_text(self, text: str) -> str:
+        """テキストをクリーニングして読みやすく整形（改良版）"""
+        if not text:
+            return ""
         
+        # 基本的なクリーニング
+        text = re.sub(r'\s+', ' ', text)  # 複数の空白を1つに
+        text = text.strip()
+        
+        # 重複フレーズの除去（より寛容に）
+        words = text.split()
+        unique_words = []
+        
+        # 連続する同じ単語を除去
+        prev_word = None
+        for word in words:
+            if word != prev_word:
+                unique_words.append(word)
+            prev_word = word
+        
+        text = ' '.join(unique_words)
+        
+        # 日本語の場合の特別処理
+        if self._is_japanese_text(text):
+            text = self._format_japanese_text(text)
+        else:
+            text = self._format_english_text(text)
+        
+        return text
+    
+    def _is_japanese_text(self, text: str) -> bool:
+        """テキストが日本語かどうかを判定"""
+        # ひらがな、カタカナ、漢字が含まれているかチェック
+        japanese_chars = re.findall(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]', text)
+        return len(japanese_chars) > len(text) * 0.3  # 30%以上が日本語文字
+    
+    def _format_japanese_text(self, text: str) -> str:
+        """日本語テキストの整形"""
+        # 句読点での区切りを整理
+        sentences = re.split(r'[。！？]', text)
+        formatted_sentences = []
+        
+        current_paragraph = []
         for sentence in sentences:
             sentence = sentence.strip()
             if sentence:
                 current_paragraph.append(sentence)
                 
-                # 3-4文ごと、または特定のキーワードで段落を区切る
+                # 3-4文ごとまたは特定の語尾で段落を区切る
                 if (len(current_paragraph) >= 3 or 
-                    any(keyword in sentence for keyword in ['です', 'ます', 'でしょう', 'ですね'])):
-                    paragraphs.append('。'.join(current_paragraph) + '。')
+                    any(ending in sentence for ending in ['です', 'ます', 'でした', 'ました', 'だった', 'である'])):
+                    paragraph_text = '。'.join(current_paragraph) + '。'
+                    formatted_sentences.append(paragraph_text)
                     current_paragraph = []
         
-        # 残りの文章があれば追加
+        # 残りの文があれば追加
         if current_paragraph:
-            paragraphs.append('。'.join(current_paragraph) + '。')
+            paragraph_text = '。'.join(current_paragraph) + '。'
+            formatted_sentences.append(paragraph_text)
         
-        return '\n'.join(paragraphs)
+        return '\n'.join(formatted_sentences)
+    
+    def _format_english_text(self, text: str) -> str:
+        """英語テキストの整形"""
+        # 文の区切りを整理
+        sentences = re.split(r'[.!?]', text)
+        formatted_sentences = []
+        
+        current_paragraph = []
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if sentence:
+                # 最初の文字を大文字に
+                sentence = sentence[0].upper() + sentence[1:] if len(sentence) > 1 else sentence.upper()
+                current_paragraph.append(sentence)
+                
+                # 3-4文ごとに段落を区切る
+                if len(current_paragraph) >= 4:
+                    paragraph_text = '. '.join(current_paragraph) + '.'
+                    formatted_sentences.append(paragraph_text)
+                    current_paragraph = []
+        
+        # 残りの文があれば追加
+        if current_paragraph:
+            paragraph_text = '. '.join(current_paragraph) + '.'
+            formatted_sentences.append(paragraph_text)
+        
+        return '\n\n'.join(formatted_sentences)
     
     def _format_transcript(self, video_info: Dict, subtitle_data: Dict, url: str) -> str:
         """指定されたフォーマットでトランスクリプトを整形"""
